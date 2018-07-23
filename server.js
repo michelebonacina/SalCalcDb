@@ -1,33 +1,29 @@
-// See LICENSE.MD for license information.
-
 'use strict';
 
-/********************************
-Dependencies
-********************************/
-var express = require('express'),// server middleware
-    mongoose = require('mongoose'),// MongoDB connection library
-    bodyParser = require('body-parser'),// parse HTTP requests
-    passport = require('passport'),// Authentication framework
+var express = require('express'),                       // server middleware
+    mongoose = require('mongoose'),                     // MongoDB connection library
+    bodyParser = require('body-parser'),                // parse HTTP requests
+    url = require('url'),
+    passport = require('passport'),                     // Authentication framework
     LocalStrategy = require('passport-local').Strategy,
-    expressValidator = require('express-validator'), // validation tool for processing user input
+    expressValidator = require('express-validator'),    // validation tool for processing user input
     cookieParser = require('cookie-parser'),
     session = require('express-session'),
+    cors = require('cors'),
     MongoStore = require('connect-mongo/es5')(session), // store sessions in MongoDB for persistence
-    bcrypt = require('bcrypt'), // middleware to encrypt/decrypt passwords
+    bcrypt = require('bcrypt'),                         // middleware to encrypt/decrypt passwords
     sessionDB,
 
-    cfenv = require('cfenv'),// Cloud Foundry Environment Variables
-    appEnv = cfenv.getAppEnv(),// Grab environment variables
+    cfenv = require('cfenv'),                           // Cloud Foundry Environment Variables
+    appEnv = cfenv.getAppEnv(),                         // Grab environment variables
+    dateFormat = require('dateformat'),
 
-    User = require('./server/models/user.model');
-    
+    Person = require('./server/models/person.model');
 
-/********************************
-Local Environment Variables
- ********************************/
-if(appEnv.isLocal){
-    require('dotenv').load();// Loads .env file into environment
+
+if (appEnv.isLocal)
+{
+    require('dotenv').load();   // Loads .env file into environment
 }
 
 /******************************** 
@@ -35,32 +31,35 @@ if(appEnv.isLocal){
  ********************************/
 
 //Detects environment and connects to appropriate DB
-if(appEnv.isLocal){
-    mongoose.connect(process.env.LOCAL_MONGODB_URL);
-    sessionDB = process.env.LOCAL_MONGODB_URL;
-    console.log('Your MongoDB is running at ' + process.env.LOCAL_MONGODB_URL);
+if (appEnv.isLocal)
+{
+    mongoose.connect(process.env.LOCAL_MONGODB_URL + "/" + process.env.LOCAL_MONGODB_DB);
+    sessionDB = process.env.LOCAL_MONGODB_URL + "/" + process.env.LOCAL_MONGODB_DB;
+    console.log('Your MongoDB is running at ' + process.env.LOCAL_MONGODB_URL + "/" + process.env.LOCAL_MONGODB_DB);
 }
 // Connect to MongoDB Service on Bluemix
-else if(!appEnv.isLocal) {
+else if (!appEnv.isLocal)
+{
     var mongoDbUrl, mongoDbOptions = {};
     var mongoDbCredentials = appEnv.services["compose-for-mongodb"][0].credentials;
     var ca = [new Buffer(mongoDbCredentials.ca_certificate_base64, 'base64')];
     mongoDbUrl = mongoDbCredentials.uri;
     mongoDbOptions = {
-      mongos: {
-        ssl: true,
-        sslValidate: true,
-        sslCA: ca,
-        poolSize: 1,
-        reconnectTries: 1
-      }
+        mongos: {
+            ssl: true,
+            sslValidate: true,
+            sslCA: ca,
+            poolSize: 1,
+            reconnectTries: 1
+        }
     };
 
     console.log("Your MongoDB is running at ", mongoDbUrl);
     mongoose.connect(mongoDbUrl, mongoDbOptions); // connect to our database
     sessionDB = mongoDbUrl;
 }
-else{
+else
+{
     console.log('Unable to connect to MongoDB.');
 }
 
@@ -73,8 +72,10 @@ Express Settings
 var app = express();
 app.enable('trust proxy');
 // Use SSL connection provided by Bluemix. No setup required besides redirecting all HTTP requests to HTTPS
-if (!appEnv.isLocal) {
-    app.use(function (req, res, next) {
+if (!appEnv.isLocal)
+{
+    app.use(function (req, res, next)
+    {
         if (req.secure) // returns true is protocol = https
             next();
         else
@@ -83,7 +84,7 @@ if (!appEnv.isLocal) {
 }
 app.use(express.static(__dirname + '/public'));
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({extended:true}));
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(expressValidator()); // must go directly after bodyParser
 app.use(cookieParser());
 app.use(session({
@@ -93,38 +94,52 @@ app.use(session({
         url: sessionDB,
         autoReconnect: true
     }),
-    saveUninitialized : false,
+    saveUninitialized: false,
     cookie: { secure: true }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
+app.use(cors(
+    {
+        origin: 'http://localhost:4200',
+        credentials: true
+    }
+));
 
 
 
 /********************************
  Passport Middleware Configuration
  ********************************/
-passport.serializeUser(function(user, done) {
+passport.serializeUser(function (user, done)
+{
     done(null, user.id);
 });
 
-passport.deserializeUser(function(id, done) {
-    User.findById(id, function (err, user) {
+passport.deserializeUser(function (id, done)
+{
+    User.findById(id, function (err, user)
+    {
         done(err, user);
     });
 });
 
 passport.use(new LocalStrategy(
-    function(username, password, done) {
-        User.findOne({ username: username }, function (err, user) {
-            if (err) {
+    function (username, password, done)
+    {
+        User.findOne({ username: username }, function (err, user)
+        {
+            if (err)
+            {
                 return done(err);
             }
-            if (!user) {
+            if (!user)
+            {
                 return done(null, false, { message: 'Incorrect username.' });
             }
             // validatePassword method defined in user.model.js
-            if (!user.validatePassword(password, user.password)) {
+            if (!user.validatePassword(password, user.password))
+            {
                 return done(null, false, { message: 'Incorrect password.' });
             }
             return done(null, user);
@@ -132,38 +147,212 @@ passport.use(new LocalStrategy(
     }
 ));
 
-/********************************
- Routing
- ********************************/
+// //////////////////
+// Routing
+// //////////////////
 
-// Home
-app.get('/', function (req, res){
-    res.sendfile('index.html');
-});
+// gets home
+app.get('/',
+    (request, response) =>
+    {
+        response.sendfile('index.html');
+    }
+);
+
+// lists all persons
+app.get('/persons/list',
+    (request, response) =>
+    {
+        // prepares and execute query
+        var query = Person.find().sort({ surname: 1, name: 1 });
+        query.exec(
+            (error, persons) =>
+            {
+                // finded persons
+                var personList = [];
+                for (var i in persons)
+                {
+                    // adds person to list
+                    personList.push(
+                        {
+                            id: persons[i]._id,
+                            surname: persons[i].surname,
+                            name: persons[i].name,
+                            birthdate: dateFormat(persons[i].birthdate, 'yyyy-mm-dd'),
+                        }
+                    );
+                }
+                // sends finded persons to response
+                response.send(JSON.stringify(personList));
+            }
+        );
+    }
+);
+
+// creates a new person
+app.post('/persons/create',
+    (request, response) =>
+    {
+        // checks if person's data are posted
+        request.checkBody('surname', 'Surname is required').notEmpty();
+        request.checkBody('name', 'Name is required').notEmpty();
+        // checks errors and return an array with validation errors
+        var errors = request.validationErrors();
+        if (errors)
+        {
+            // sends error response
+            response.status(400).send(errors);
+            return;
+        }
+        // creates a new person
+        var person = new Person(
+            {
+                surname: request.body.surname,
+                name: request.body.name,
+                birthdate: request.body.birthdate,
+            }
+        )
+        // stores person in persistence
+        person.save(
+            // manages store result
+            (error) =>
+            {
+                if (error)
+                {
+                    // sends error response
+                    console.log(error);
+                    response.status(500).send('Error saving new person (database error). Please try again.');
+                    return;
+                }
+                // sends ok response
+                response.status(200).send('Person created!');
+            }
+        );
+    }
+);
+
+// updates an existing person
+app.post('/persons/update/*',
+    (request, response) =>
+    {
+        // gets person's id
+        var urlParts = url.parse(request.url);
+        var id = urlParts.pathname.split('/').pop();
+        // checks if person's mandatory data are posted
+        request.checkBody('surname', 'Surname is required').notEmpty();
+        request.checkBody('name', 'Name is required').notEmpty();
+        // checks errors and return an array with validation errors
+        var errors = request.validationErrors();
+        if (errors)
+        {
+            // sends error response
+            response.status(400).send(errors);
+            return;
+        }
+        // loads person
+        Person.findById(id,
+            (error, person) =>
+            {
+                // manages find result
+                if (error)
+                {
+                    // sends error response
+                    console.log(error);
+                    response.status(500).send('Error finding existing person (database error). Please try again.');
+                    return;
+                }
+                // updates person's data
+                person.surname = request.body.surname;
+                person.name = request.body.name;
+                person.birthdate = request.body.birthdate;
+                // stores person in persistence
+                person.save(
+                    // manages store result
+                    (error) =>
+                    {
+                        if (error)
+                        {
+                            // sends error response
+                            console.log(error);
+                            response.status(500).send('Error updating existing person (database error). Please try again.');
+                            return;
+                        }
+                        // sends ok response
+                        response.status(200).send('Person updated!');
+                    }
+                );
+            }
+        )
+    }
+);
+
+// deletes an existing person
+app.delete('/persons/delete/*',
+    (request, response) =>
+    {
+        // gets person's id
+        var urlParts = url.parse(request.url);
+        var id = urlParts.pathname.split('/').pop();
+        // loads person
+        Person.findById(id,
+            (error, person) =>
+            {
+                // manages find result
+                if (error)
+                {
+                    // sends error response
+                    console.log(error);
+                    response.status(500).send('Error finding existing person (database error). Please try again.');
+                    return;
+                }
+                // deletes person from persistence
+                person.remove(
+                    (error, person) =>
+                    {
+                        if (error)
+                        {
+                            // sends error response
+                            console.log(error);
+                            response.status(500).send('Error deleting existing person (database error). Please try again.');
+                            return;
+                        }
+                        // sends ok response
+                        response.status(200).send('Person deleted!');
+                    }
+                );
+            }
+        );
+    }
+);
+
 
 // Account login
-app.post('/account/login', function(req,res){
+app.post('/account/login', function (req, res)
+{
 
     // Validation prior to checking DB. Front end validation exists, but this functions as a fail-safe
     req.checkBody('username', 'Username is required').notEmpty();
     req.checkBody('password', 'Password is required').notEmpty();
 
     var errors = req.validationErrors(); // returns an object with results of validation check
-    if (errors) {
+    if (errors)
+    {
         res.status(401).send('Username or password was left empty. Please complete both fields and re-submit.');
         return;
     }
 
     // Create session if username exists and password is correct
-    passport.authenticate('local', function(err, user) {
+    passport.authenticate('local', function (err, user)
+    {
         if (err) { return next(err); }
         if (!user) { return res.status(401).send('User not found. Please check your entry and try again.'); }
-        req.logIn(user, function(err) { // creates session
+        req.logIn(user, function (err)
+        { // creates session
             if (err) { return res.status(500).send('Error saving session.'); }
             var userInfo = {
                 username: user.username,
-                name : user.name,
-                email : user.email
+                name: user.name,
+                email: user.email
             };
             return res.json(userInfo);
         });
@@ -172,7 +361,8 @@ app.post('/account/login', function(req,res){
 });
 
 // Account creation
-app.post('/account/create', function(req,res){
+app.post('/account/create', function (req, res)
+{
 
     // 1. Input validation. Front end validation exists, but this functions as a fail-safe
     req.checkBody('username', 'Username is required').notEmpty();
@@ -181,7 +371,8 @@ app.post('/account/create', function(req,res){
     req.checkBody('email', 'Email is required and must be in a valid form').notEmpty().isEmail();
 
     var errors = req.validationErrors(); // returns an array with results of validation check
-    if (errors) {
+    if (errors)
+    {
         res.status(400).send(errors);
         return;
     }
@@ -199,12 +390,16 @@ app.post('/account/create', function(req,res){
     });
 
     // 4. Store the data in MongoDB
-    User.findOne({ username: req.body.username }, function(err, existingUser) {
-        if (existingUser) {
+    User.findOne({ username: req.body.username }, function (err, existingUser)
+    {
+        if (existingUser)
+        {
             return res.status(400).send('That username already exists. Please try a different username.');
         }
-        user.save(function(err) {
-            if (err) {
+        user.save(function (err)
+        {
+            if (err)
+            {
                 console.log(err);
                 res.status(500).send('Error saving new account (database error). Please try again.');
                 return;
@@ -216,16 +411,21 @@ app.post('/account/create', function(req,res){
 });
 
 //Account deletion
-app.post('/account/delete', authorizeRequest, function(req, res){
+app.post('/account/delete', authorizeRequest, function (req, res)
+{
 
-    User.remove({ username: req.body.username }, function(err) {
-        if (err) {
+    User.remove({ username: req.body.username }, function (err)
+    {
+        if (err)
+        {
             console.log(err);
             res.status(500).send('Error deleting account.');
             return;
         }
-        req.session.destroy(function(err) {
-            if(err){
+        req.session.destroy(function (err)
+        {
+            if (err)
+            {
                 res.status(500).send('Error deleting account.');
                 console.log("Error deleting session: " + err);
                 return;
@@ -237,7 +437,8 @@ app.post('/account/delete', authorizeRequest, function(req, res){
 });
 
 // Account update
-app.post('/account/update', authorizeRequest, function(req,res){
+app.post('/account/update', authorizeRequest, function (req, res)
+{
 
     // 1. Input validation. Front end validation exists, but this functions as a fail-safe
     req.checkBody('username', 'Username is required').notEmpty();
@@ -246,7 +447,8 @@ app.post('/account/update', authorizeRequest, function(req,res){
     req.checkBody('email', 'Email is required and must be in a valid form').notEmpty().isEmail();
 
     var errors = req.validationErrors(); // returns an object with results of validation check
-    if (errors) {
+    if (errors)
+    {
         res.status(400).send(errors);
         return;
     }
@@ -256,8 +458,10 @@ app.post('/account/update', authorizeRequest, function(req,res){
         hash = bcrypt.hashSync(req.body.password, salt);
 
     // 3. Store updated data in MongoDB
-    User.findOne({ username: req.body.username }, function(err, user) {
-        if (err) {
+    User.findOne({ username: req.body.username }, function (err, user)
+    {
+        if (err)
+        {
             console.log(err);
             return res.status(400).send('Error updating account.');
         }
@@ -265,8 +469,10 @@ app.post('/account/update', authorizeRequest, function(req,res){
         user.password = hash;
         user.email = req.body.email;
         user.name = req.body.name;
-        user.save(function(err) {
-            if (err) {
+        user.save(function (err)
+        {
+            if (err)
+            {
                 console.log(err);
                 res.status(500).send('Error updating account.');
                 return;
@@ -278,14 +484,18 @@ app.post('/account/update', authorizeRequest, function(req,res){
 });
 
 // Account logout
-app.get('/account/logout', function(req,res){
+app.get('/account/logout', function (req, res)
+{
 
     // Destroys user's session
     if (!req.user)
         res.status(400).send('User not logged in.');
-    else {
-        req.session.destroy(function(err) {
-            if(err){
+    else
+    {
+        req.session.destroy(function (err)
+        {
+            if (err)
+            {
                 res.status(500).send('Sorry. Server error in logout process.');
                 console.log("Error destroying session: " + err);
                 return;
@@ -296,22 +506,27 @@ app.get('/account/logout', function(req,res){
 });
 
 // Custom middleware to check if user is logged-in
-function authorizeRequest(req, res, next) {
-    if (req.user) {
+function authorizeRequest(req, res, next)
+{
+    if (req.user)
+    {
         next();
-    } else {
+    } else
+    {
         res.status(401).send('Unauthorized. Please login.');
     }
 }
 
 // Protected route requiring authorization to access.
-app.get('/protected', authorizeRequest, function(req, res){
+app.get('/protected', authorizeRequest, function (req, res)
+{
     res.send("This is a protected route only visible to authenticated users.");
 });
 
 /********************************
 Ports
 ********************************/
-app.listen(appEnv.port, appEnv.bind, function() {
-  console.log("Node server running on " + appEnv.url);
+app.listen(appEnv.port, appEnv.bind, function ()
+{
+    console.log("Node server running on " + appEnv.url);
 });
