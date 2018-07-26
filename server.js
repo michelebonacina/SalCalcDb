@@ -11,7 +11,6 @@ var express = require('express'),                       // server middleware
     MongoStore = require('connect-mongo/es5')(session), // store sessions in MongoDB for persistence
     bcrypt = require('bcrypt'),                         // middleware to encrypt/decrypt passwords
     sessionDB,
-
     cfenv = require('cfenv'),                           // Cloud Foundry Environment Variables
     appEnv = cfenv.getAppEnv(),                         // Grab environment variables
     dateFormat = require('dateformat'),
@@ -28,7 +27,7 @@ if (appEnv.isLocal)
 // //////////////////
 // MONGODB CONNECTION
 
-//Detects environment and connects to appropriate DB
+//Detect environment and connect to appropriate DB
 if (appEnv.isLocal)
 {
     mongoose.connect(process.env.LOCAL_MONGODB_URL + "/" + process.env.LOCAL_MONGODB_DB);
@@ -106,7 +105,7 @@ app.use(cors(
 // ////////////////
 // MANAGE API CALLS
 
-// gets home
+// get home
 app.get('/',
     (request, response) =>
     {
@@ -114,11 +113,11 @@ app.get('/',
     }
 );
 
-// lists all persons
+// list all persons
 app.get('/api/person/list',
     (request, response) =>
     {
-        // prepares and execute query
+        // prepare and execute query
         var query = Person.find().sort({ surname: 1, name: 1 });
         query.exec(
             (error, persons) =>
@@ -127,7 +126,7 @@ app.get('/api/person/list',
                 var personList = [];
                 for (var i in persons)
                 {
-                    // adds person to list
+                    // add person to list
                     personList.push(
                         {
                             id: persons[i]._id,
@@ -137,29 +136,29 @@ app.get('/api/person/list',
                         }
                     );
                 }
-                // sends finded persons to response
+                // send finded persons to response
                 response.send(JSON.stringify(personList));
             }
         );
     }
 );
 
-// creates a new person
+// create a new person
 app.post('/api/person/create',
     (request, response) =>
     {
-        // checks if person's data are posted
+        // check if person's data are posted
         request.checkBody('surname', 'Surname is required').notEmpty();
         request.checkBody('name', 'Name is required').notEmpty();
-        // checks errors and return an array with validation errors
+        // check errors and return an array with validation errors
         var errors = request.validationErrors();
         if (errors)
         {
-            // sends error response
+            // send error response
             response.status(400).send(errors);
             return;
         }
-        // creates a new person
+        // create a new person
         var person = new Person(
             {
                 surname: request.body.surname,
@@ -167,72 +166,72 @@ app.post('/api/person/create',
                 birthdate: request.body.birthdate,
             }
         )
-        // stores person in persistence
+        // store person in persistence
         person.save(
-            // manages store result
+            // manage store result
             (error) =>
             {
                 if (error)
                 {
-                    // sends error response
+                    // send error response
                     console.log(error);
                     response.status(500).send('Error saving new person (database error). Please try again.');
                     return;
                 }
-                // sends ok response
+                // send ok response
                 response.status(200).send('Person created!');
             }
         );
     }
 );
 
-// updates an existing person
+// update an existing person
 app.post('/api/person/update/*',
     (request, response) =>
     {
-        // gets person's id
+        // get person's id
         var urlParts = url.parse(request.url);
         var id = urlParts.pathname.split('/').pop();
-        // checks if person's mandatory data are posted
+        // check if person's mandatory data are posted
         request.checkBody('surname', 'Surname is required').notEmpty();
         request.checkBody('name', 'Name is required').notEmpty();
-        // checks errors and return an array with validation errors
+        // check errors and return an array with validation errors
         var errors = request.validationErrors();
         if (errors)
         {
-            // sends error response
+            // send error response
             response.status(400).send(errors);
             return;
         }
-        // loads person
+        // load person
         Person.findById(id,
             (error, person) =>
             {
-                // manages find result
+                // manage find result
                 if (error)
                 {
-                    // sends error response
+                    // send error response
                     console.log(error);
                     response.status(500).send('Error finding existing person (database error). Please try again.');
                     return;
                 }
-                // updates person's data
+                // update person's data
                 person.surname = request.body.surname;
                 person.name = request.body.name;
                 person.birthdate = request.body.birthdate;
-                // stores person in persistence
+                // store person in persistence
                 person.save(
-                    // manages store result
+                    // manage store result
                     (error) =>
                     {
                         if (error)
                         {
-                            // sends error response
+                            // send error response
                             console.log(error);
                             response.status(500).send('Error updating existing person (database error). Please try again.');
                             return;
                         }
-                        // sends ok response
+                        // send ok response
                         response.status(200).send('Person updated!');
                     }
                 );
@@ -241,37 +240,37 @@ app.post('/api/person/update/*',
     }
 );
 
-// deletes an existing person
+// delete an existing person
 app.delete('/api/person/delete/*',
     (request, response) =>
     {
-        // gets person's id
+        // get person's id
         var urlParts = url.parse(request.url);
         var id = urlParts.pathname.split('/').pop();
-        // loads person
+        // load person
         Person.findById(id,
             (error, person) =>
             {
-                // manages find result
+                // manage find result
                 if (error)
                 {
-                    // sends error response
+                    // send error response
                     console.log(error);
                     response.status(500).send('Error finding existing person (database error). Please try again.');
                     return;
                 }
-                // deletes person from persistence
+                // delete person from persistence
                 person.remove(
                     (error, person) =>
                     {
                         if (error)
                         {
-                            // sends error response
+                            // send error response
                             console.log(error);
                             response.status(500).send('Error deleting existing person (database error). Please try again.');
                             return;
                         }
-                        // sends ok response
+                        // send ok response
                         response.status(200).send('Person deleted!');
                     }
                 );
@@ -287,25 +286,22 @@ app.post('/api/user/login',
         // check login data
         request.checkBody('username', 'Username is required').notEmpty();
         request.checkBody('password', 'Password is required').notEmpty();
-        // checks errors and return an array with validation errors
+        // check errors and return an array with validation errors
         var errors = request.validationErrors();
         if (errors)
         {
-            // sends error response
+            // send error response
             response.status(400).send(errors);
             return;
         }
-        // encrypt password
-        var salt = bcrypt.genSaltSync(10);
-        var hash = bcrypt.hashSync(request.body.password, salt);
-        // get username and pawword
+        // search user
         User.findOne(
-            { username: request.body.username, password: hash },
+            { username: request.body.username },
             (error, user) =>
             {
                 if (error)
                 {
-                    // sends error response
+                    // send error response
                     console.log(error);
                     response.status(500).send('Error finding existing user (database error). Please try again.');
                     return;
@@ -313,13 +309,24 @@ app.post('/api/user/login',
                 if (user)
                 {
                     // user finded
-                    var authenticatedUser =
+                    // check password
+                    if (bcrypt.compareSync(request.body.password, user.password))
                     {
-                        id: user._id,
-                        username: user.username,
-                    };
-                    // send ok response
-                    response.status(200).send(JSON.stringify(authenticatedUser));
+                        // password match
+                        var authenticatedUser =
+                        {
+                            id: user._id,
+                            username: user.username,
+                        };
+                        // send ok response
+                        response.status(200).send(JSON.stringify(authenticatedUser));
+                    }
+                    else 
+                    {
+                        // wrong password
+                        // send ko response
+                        response.status(401).send('User unauthorized');
+                    }
                 }
                 else 
                 {
@@ -336,7 +343,7 @@ app.post('/api/user/login',
 app.get('/api/user/list',
     (request, response) =>
     {
-        // prepares and execute query
+        // prepare and execute query
         var query = User.find().sort({ username: 1 });
         query.exec(
             (error, users) =>
@@ -345,7 +352,7 @@ app.get('/api/user/list',
                 var userList = [];
                 for (var i in users)
                 {
-                    // adds user to list
+                    // add user to list
                     userList.push(
                         {
                             id: users[i]._id,
@@ -353,7 +360,7 @@ app.get('/api/user/list',
                         }
                     );
                 }
-                // sends finded users to response
+                // send finded users to response
                 response.send(JSON.stringify(userList));
             }
         );
@@ -404,50 +411,50 @@ app.post('/api/user/create',
     }
 );
 
-// updates an existing user
+// update an existing user
 app.post('/api/user/update/*',
     (request, response) =>
     {
-        // gets user's id
+        // get user's id
         var urlParts = url.parse(request.url);
         var id = urlParts.pathname.split('/').pop();
-        // checks if user's mandatory data are posted
+        // check if user's mandatory data are posted
         request.checkBody('username', 'Username is required').notEmpty();
-        // checks errors and return an array with validation errors
+        // check errors and return an array with validation errors
         var errors = request.validationErrors();
         if (errors)
         {
-            // sends error response
+            // send error response
             response.status(400).send(errors);
             return;
         }
-        // loads user
+        // load user
         User.findById(id,
             (error, user) =>
             {
-                // manages find result
+                // manage find result
                 if (error)
                 {
-                    // sends error response
+                    // send error response
                     console.log(error);
                     response.status(500).send('Error finding existing user (database error). Please try again.');
                     return;
                 }
-                // updates user's data
+                // update user's data
                 user.username = request.body.username;
-                // stores user in persistence
+                // store user in persistence
                 user.save(
-                    // manages store result
+                    // manage store result
                     (error) =>
                     {
                         if (error)
                         {
-                            // sends error response
+                            // send error response
                             console.log(error);
                             response.status(500).send('Error updating existing user (database error). Please try again.');
                             return;
                         }
-                        // sends ok response
+                        // send ok response
                         response.status(200).send('User updated!');
                     }
                 );
@@ -469,18 +476,18 @@ app.post('/api/user/changePassword/*',
         var errors = request.validationErrors();
         if (errors)
         {
-            // sends error response
+            // send error response
             response.status(400).send(errors);
             return;
         }
-        // loads user
+        // load user
         User.findById(id,
             (error, user) =>
             {
                 // manages find result
                 if (error)
                 {
-                    // sends error response
+                    // send error response
                     console.log(error);
                     response.status(500).send('Error finding existing user (database error). Please try again.');
                     return;
@@ -488,21 +495,21 @@ app.post('/api/user/changePassword/*',
                 // encrypt password
                 var salt = bcrypt.genSaltSync(10);
                 var hash = bcrypt.hashSync(request.body.password, salt);
-                // updates user's data
+                // update user's data
                 user.password = hash;
-                // stores user in persistence
+                // store user in persistence
                 user.save(
-                    // manages store result
+                    // manage store result
                     (error) =>
                     {
                         if (error)
                         {
-                            // sends error response
+                            // send error response
                             console.log(error);
                             response.status(500).send('Error changingc existing user password (database error). Please try again.');
                             return;
                         }
-                        // sends ok response
+                        // send ok response
                         response.status(200).send('Password changed!');
                     }
                 );
@@ -511,37 +518,37 @@ app.post('/api/user/changePassword/*',
     }
 );
 
-// deletes an existing user
+// delete an existing user
 app.delete('/api/user/delete/*',
     (request, response) =>
     {
-        // gets user's id
+        // get user's id
         var urlParts = url.parse(request.url);
         var id = urlParts.pathname.split('/').pop();
-        // loads user
+        // load user
         User.findById(id,
             (error, user) =>
             {
-                // manages find result
+                // manage find result
                 if (error)
                 {
-                    // sends error response
+                    // send error response
                     console.log(error);
                     response.status(500).send('Error finding existing user (database error). Please try again.');
                     return;
                 }
-                // deletes user from persistence
+                // delete user from persistence
                 user.remove(
                     (error, user) =>
                     {
                         if (error)
                         {
-                            // sends error response
+                            // send error response
                             console.log(error);
                             response.status(500).send('Error deleting existing user (database error). Please try again.');
                             return;
                         }
-                        // sends ok response
+                        // send ok response
                         response.status(200).send('User deleted!');
                     }
                 );
