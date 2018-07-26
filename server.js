@@ -18,7 +18,8 @@ var express = require('express'),                       // server middleware
     appEnv = cfenv.getAppEnv(),                         // Grab environment variables
     dateFormat = require('dateformat'),
 
-    Person = require('./server/models/person.model');
+    Person = require('./server/models/person.model'),
+    User = require('./server/models/user.model');
 
 
 if (appEnv.isLocal)
@@ -320,6 +321,50 @@ app.delete('/persons/delete/*',
                         response.status(200).send('Person deleted!');
                     }
                 );
+            }
+        );
+    }
+);
+
+// check user login
+app.post('/api/user/login',
+    (request, response) =>
+    {
+        // check login data
+        request.checkBody('username', 'Username is required').notEmpty();
+        request.checkBody('password', 'Password is required').notEmpty();
+        // checks errors and return an array with validation errors
+        var errors = request.validationErrors();
+        if (errors)
+        {
+            // sends error response
+            response.status(400).send(errors);
+            return;
+        }
+        // get username and pawword
+        User.findOne(
+            { username: request.body.username, password: request.body.password },
+            (error, user) =>
+            {
+                if (error)
+                {
+                    // sends error response
+                    console.log(error);
+                    response.status(500).send('Error finding existing user (database error). Please try again.');
+                    return;
+                }
+                if (user)
+                {
+                    // user finded
+                    // send ok response
+                    response.status(200).send(JSON.stringify(user));
+                }
+                else 
+                {
+                    // user not exist
+                    // send ko response
+                    response.status(401).send('User unauthorized');
+                }
             }
         );
     }
