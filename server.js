@@ -82,16 +82,20 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(expressValidator()); // must go directly after bodyParser
 app.use(cookieParser());
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'this_is_a_default_session_secret_in_case_one_is_not_defined',
-    resave: true,
-    store: new MongoStore({
-        url: sessionDB,
-        autoReconnect: true
-    }),
-    saveUninitialized: false,
-    cookie: { secure: true }
-}));
+app.use(session(
+    {
+        secret: process.env.SESSION_SECRET || 'this_is_a_default_session_secret_in_case_one_is_not_defined',
+        resave: true,
+        store: new MongoStore(
+            {
+                url: sessionDB,
+                autoReconnect: true
+            }
+        ),
+        saveUninitialized: false,
+        cookie: { secure: true }
+    }
+));
 app.use(cors(
     {
         origin: 'http://localhost:4200',
