@@ -4,8 +4,6 @@ var express = require('express'),                       // server middleware
     mongoose = require('mongoose'),                     // MongoDB connection library
     bodyParser = require('body-parser'),                // parse HTTP requests
     url = require('url'),
-    passport = require('passport'),                     // Authentication framework
-    LocalStrategy = require('passport-local').Strategy,
     expressValidator = require('express-validator'),    // validation tool for processing user input
     cookieParser = require('cookie-parser'),
     session = require('express-session'),
@@ -27,9 +25,8 @@ if (appEnv.isLocal)
     require('dotenv').load();   // Loads .env file into environment
 }
 
-/******************************** 
- MongoDB Connection
- ********************************/
+// //////////////////
+// MONGODB CONNECTION
 
 //Detects environment and connects to appropriate DB
 if (appEnv.isLocal)
@@ -64,12 +61,9 @@ else
     console.log('Unable to connect to MongoDB.');
 }
 
+// /////////////////////
+// MIDDLEWARE & SETTINGS
 
-
-
-/********************************
-Express Settings
-********************************/
 var app = express();
 app.enable('trust proxy');
 // Use SSL connection provided by Bluemix. No setup required besides redirecting all HTTP requests to HTTPS
@@ -98,8 +92,6 @@ app.use(session({
     saveUninitialized: false,
     cookie: { secure: true }
 }));
-app.use(passport.initialize());
-app.use(passport.session());
 app.use(cors(
     {
         origin: 'http://localhost:4200',
@@ -107,50 +99,8 @@ app.use(cors(
     }
 ));
 
-
-
-/********************************
- Passport Middleware Configuration
- ********************************/
-passport.serializeUser(function (user, done)
-{
-    done(null, user.id);
-});
-
-passport.deserializeUser(function (id, done)
-{
-    User.findById(id, function (err, user)
-    {
-        done(err, user);
-    });
-});
-
-passport.use(new LocalStrategy(
-    function (username, password, done)
-    {
-        User.findOne({ username: username }, function (err, user)
-        {
-            if (err)
-            {
-                return done(err);
-            }
-            if (!user)
-            {
-                return done(null, false, { message: 'Incorrect username.' });
-            }
-            // validatePassword method defined in user.model.js
-            if (!user.validatePassword(password, user.password))
-            {
-                return done(null, false, { message: 'Incorrect password.' });
-            }
-            return done(null, user);
-        });
-    }
-));
-
-// //////////////////
-// Routing
-// //////////////////
+// ////////////////
+// MANAGE API CALLS
 
 // gets home
 app.get('/',
@@ -161,7 +111,7 @@ app.get('/',
 );
 
 // lists all persons
-app.get('/persons/list',
+app.get('/api/person/list',
     (request, response) =>
     {
         // prepares and execute query
@@ -191,7 +141,7 @@ app.get('/persons/list',
 );
 
 // creates a new person
-app.post('/persons/create',
+app.post('/api/person/create',
     (request, response) =>
     {
         // checks if person's data are posted
@@ -233,7 +183,7 @@ app.post('/persons/create',
 );
 
 // updates an existing person
-app.post('/persons/update/*',
+app.post('/api/person/update/*',
     (request, response) =>
     {
         // gets person's id
@@ -288,7 +238,7 @@ app.post('/persons/update/*',
 );
 
 // deletes an existing person
-app.delete('/persons/delete/*',
+app.delete('/api/person/delete/*',
     (request, response) =>
     {
         // gets person's id
@@ -341,9 +291,12 @@ app.post('/api/user/login',
             response.status(400).send(errors);
             return;
         }
+        // encrypt password
+        var salt = bcrypt.genSaltSync(10);
+        var hash = bcrypt.hashSync(request.body.password, salt);
         // get username and pawword
         User.findOne(
-            { username: request.body.username, password: request.body.password },
+            { username: request.body.username, password: hash },
             (error, user) =>
             {
                 if (error)
@@ -356,8 +309,13 @@ app.post('/api/user/login',
                 if (user)
                 {
                     // user finded
+                    var authenticatedUser =
+                    {
+                        id: user._id,
+                        username: user.username,
+                    };
                     // send ok response
-                    response.status(200).send(JSON.stringify(user));
+                    response.status(200).send(JSON.stringify(authenticatedUser));
                 }
                 else 
                 {
@@ -370,208 +328,230 @@ app.post('/api/user/login',
     }
 );
 
-
-// Account login
-app.post('/account/login', function (req, res)
-{
-
-    // Validation prior to checking DB. Front end validation exists, but this functions as a fail-safe
-    req.checkBody('username', 'Username is required').notEmpty();
-    req.checkBody('password', 'Password is required').notEmpty();
-
-    var errors = req.validationErrors(); // returns an object with results of validation check
-    if (errors)
+// list all users
+app.get('/api/user/list',
+    (request, response) =>
     {
-        res.status(401).send('Username or password was left empty. Please complete both fields and re-submit.');
-        return;
-    }
-
-    // Create session if username exists and password is correct
-    passport.authenticate('local', function (err, user)
-    {
-        if (err) { return next(err); }
-        if (!user) { return res.status(401).send('User not found. Please check your entry and try again.'); }
-        req.logIn(user, function (err)
-        { // creates session
-            if (err) { return res.status(500).send('Error saving session.'); }
-            var userInfo = {
-                username: user.username,
-                name: user.name,
-                email: user.email
-            };
-            return res.json(userInfo);
-        });
-    })(req, res);
-
-});
-
-// Account creation
-app.post('/account/create', function (req, res)
-{
-
-    // 1. Input validation. Front end validation exists, but this functions as a fail-safe
-    req.checkBody('username', 'Username is required').notEmpty();
-    req.checkBody('password', 'Password is required').notEmpty();
-    req.checkBody('name', 'Name is required').notEmpty();
-    req.checkBody('email', 'Email is required and must be in a valid form').notEmpty().isEmail();
-
-    var errors = req.validationErrors(); // returns an array with results of validation check
-    if (errors)
-    {
-        res.status(400).send(errors);
-        return;
-    }
-
-    // 2. Hash user's password for safe-keeping in DB
-    var salt = bcrypt.genSaltSync(10),
-        hash = bcrypt.hashSync(req.body.password, salt);
-
-    // 3. Create new object that store's new user data
-    var user = new User({
-        username: req.body.username,
-        password: hash,
-        email: req.body.email,
-        name: req.body.name
-    });
-
-    // 4. Store the data in MongoDB
-    User.findOne({ username: req.body.username }, function (err, existingUser)
-    {
-        if (existingUser)
-        {
-            return res.status(400).send('That username already exists. Please try a different username.');
-        }
-        user.save(function (err)
-        {
-            if (err)
+        // prepares and execute query
+        var query = User.find().sort({ username: 1 });
+        query.exec(
+            (error, users) =>
             {
-                console.log(err);
-                res.status(500).send('Error saving new account (database error). Please try again.');
-                return;
+                // finded users
+                var userList = [];
+                for (var i in users)
+                {
+                    // adds user to list
+                    userList.push(
+                        {
+                            id: users[i]._id,
+                            username: users[i].username,
+                        }
+                    );
+                }
+                // sends finded users to response
+                response.send(JSON.stringify(userList));
             }
-            res.status(200).send('Account created! Please login with your new account.');
-        });
-    });
+        );
+    }
+);
 
-});
-
-//Account deletion
-app.post('/account/delete', authorizeRequest, function (req, res)
-{
-
-    User.remove({ username: req.body.username }, function (err)
+// create a new user
+app.post('/api/user/create',
+    (request, response) =>
     {
-        if (err)
+        // check if user data are posted
+        request.checkBody('username', 'Username is required').notEmpty();
+        request.checkBody('password', 'Password is required').notEmpty();
+        // check errors and return an array with validation errors
+        var errors = request.validationErrors();
+        if (errors)
         {
-            console.log(err);
-            res.status(500).send('Error deleting account.');
+            // send error response
+            response.status(400).send(errors);
             return;
         }
-        req.session.destroy(function (err)
-        {
-            if (err)
+        // encrypt password
+        var salt = bcrypt.genSaltSync(10);
+        var hash = bcrypt.hashSync(request.body.password, salt);
+        // create a new user
+        var user = new User(
             {
-                res.status(500).send('Error deleting account.');
-                console.log("Error deleting session: " + err);
-                return;
+                username: request.body.username,
+                password: hash,
             }
-            res.status(200).send('Account successfully deleted.');
-        });
-    });
-
-});
-
-// Account update
-app.post('/account/update', authorizeRequest, function (req, res)
-{
-
-    // 1. Input validation. Front end validation exists, but this functions as a fail-safe
-    req.checkBody('username', 'Username is required').notEmpty();
-    req.checkBody('password', 'Password is required').notEmpty();
-    req.checkBody('name', 'Name is required').notEmpty();
-    req.checkBody('email', 'Email is required and must be in a valid form').notEmpty().isEmail();
-
-    var errors = req.validationErrors(); // returns an object with results of validation check
-    if (errors)
-    {
-        res.status(400).send(errors);
-        return;
+        )
+        // store user in persistence
+        user.save(
+            // manage store result
+            (error) =>
+            {
+                if (error)
+                {
+                    // send error response
+                    console.log(error);
+                    response.status(500).send('Error saving new user (database error). Please try again.');
+                    return;
+                }
+                // sends ok response
+                response.status(200).send('User created!');
+            }
+        );
     }
+);
 
-    // 2. Hash user's password for safe-keeping in DB
-    var salt = bcrypt.genSaltSync(10),
-        hash = bcrypt.hashSync(req.body.password, salt);
-
-    // 3. Store updated data in MongoDB
-    User.findOne({ username: req.body.username }, function (err, user)
+// updates an existing user
+app.post('/api/user/update/*',
+    (request, response) =>
     {
-        if (err)
+        // gets user's id
+        var urlParts = url.parse(request.url);
+        var id = urlParts.pathname.split('/').pop();
+        // checks if user's mandatory data are posted
+        request.checkBody('username', 'Username is required').notEmpty();
+        // checks errors and return an array with validation errors
+        var errors = request.validationErrors();
+        if (errors)
         {
-            console.log(err);
-            return res.status(400).send('Error updating account.');
+            // sends error response
+            response.status(400).send(errors);
+            return;
         }
-        user.username = req.body.username;
-        user.password = hash;
-        user.email = req.body.email;
-        user.name = req.body.name;
-        user.save(function (err)
-        {
-            if (err)
+        // loads user
+        User.findById(id,
+            (error, user) =>
             {
-                console.log(err);
-                res.status(500).send('Error updating account.');
-                return;
+                // manages find result
+                if (error)
+                {
+                    // sends error response
+                    console.log(error);
+                    response.status(500).send('Error finding existing user (database error). Please try again.');
+                    return;
+                }
+                // updates user's data
+                user.username = request.body.username;
+                // stores user in persistence
+                user.save(
+                    // manages store result
+                    (error) =>
+                    {
+                        if (error)
+                        {
+                            // sends error response
+                            console.log(error);
+                            response.status(500).send('Error updating existing user (database error). Please try again.');
+                            return;
+                        }
+                        // sends ok response
+                        response.status(200).send('User updated!');
+                    }
+                );
             }
-            res.status(200).send('Account updated.');
-        });
-    });
+        )
+    }
+);
 
-});
-
-// Account logout
-app.get('/account/logout', function (req, res)
-{
-
-    // Destroys user's session
-    if (!req.user)
-        res.status(400).send('User not logged in.');
-    else
+// change existing user password
+app.post('/api/user/changePassword/*',
+    (request, response) =>
     {
-        req.session.destroy(function (err)
+        // get user's id
+        var urlParts = url.parse(request.url);
+        var id = urlParts.pathname.split('/').pop();
+        // check if user's mandatory data are posted
+        request.checkBody('password', 'Password is required').notEmpty();
+        // checks errors and return an array with validation errors
+        var errors = request.validationErrors();
+        if (errors)
         {
-            if (err)
+            // sends error response
+            response.status(400).send(errors);
+            return;
+        }
+        // loads user
+        User.findById(id,
+            (error, user) =>
             {
-                res.status(500).send('Sorry. Server error in logout process.');
-                console.log("Error destroying session: " + err);
-                return;
+                // manages find result
+                if (error)
+                {
+                    // sends error response
+                    console.log(error);
+                    response.status(500).send('Error finding existing user (database error). Please try again.');
+                    return;
+                }
+                // encrypt password
+                var salt = bcrypt.genSaltSync(10);
+                var hash = bcrypt.hashSync(request.body.password, salt);
+                // updates user's data
+                user.password = hash;
+                // stores user in persistence
+                user.save(
+                    // manages store result
+                    (error) =>
+                    {
+                        if (error)
+                        {
+                            // sends error response
+                            console.log(error);
+                            response.status(500).send('Error changingc existing user password (database error). Please try again.');
+                            return;
+                        }
+                        // sends ok response
+                        response.status(200).send('Password changed!');
+                    }
+                );
             }
-            res.status(200).send('Success logging user out!');
-        });
+        )
     }
-});
+);
 
-// Custom middleware to check if user is logged-in
-function authorizeRequest(req, res, next)
-{
-    if (req.user)
+// deletes an existing user
+app.delete('/api/user/delete/*',
+    (request, response) =>
     {
-        next();
-    } else
-    {
-        res.status(401).send('Unauthorized. Please login.');
+        // gets user's id
+        var urlParts = url.parse(request.url);
+        var id = urlParts.pathname.split('/').pop();
+        // loads user
+        User.findById(id,
+            (error, user) =>
+            {
+                // manages find result
+                if (error)
+                {
+                    // sends error response
+                    console.log(error);
+                    response.status(500).send('Error finding existing user (database error). Please try again.');
+                    return;
+                }
+                // deletes user from persistence
+                user.remove(
+                    (error, user) =>
+                    {
+                        if (error)
+                        {
+                            // sends error response
+                            console.log(error);
+                            response.status(500).send('Error deleting existing user (database error). Please try again.');
+                            return;
+                        }
+                        // sends ok response
+                        response.status(200).send('User deleted!');
+                    }
+                );
+            }
+        );
     }
-}
+);
 
-// Protected route requiring authorization to access.
-app.get('/protected', authorizeRequest, function (req, res)
-{
-    res.send("This is a protected route only visible to authenticated users.");
-});
+// //////////////
+// SERVER STARTUP
 
-/********************************
-Ports
-********************************/
-app.listen(appEnv.port, appEnv.bind, function ()
-{
-    console.log("Node server running on " + appEnv.url);
-});
+app.listen(appEnv.port, appEnv.bind,
+    function ()
+    {
+        console.log("Node server running on " + appEnv.url);
+    }
+);
