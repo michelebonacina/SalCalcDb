@@ -1,25 +1,17 @@
 'use strict';
 
-/********************************
- Dependencies
- ********************************/
-var mongoose = require('mongoose'),
-    bcrypt = require('bcrypt');
+var mongoose = require('mongoose');
 
-/********************************
- Create User Account Schema
- ********************************/
-var accountSchema = new mongoose.Schema({
-    username: {type: String, required: true, unique: true},
-    password: {type: String, required: true},
-    email: {type: String, required: true},
-    name: {type: String, required: true},
-    tokens: Array
-});
+// create user schema
+var userSchema = new mongoose.Schema(
+    {
+        username: { type: String, required: true },     // user's username
+        password: { type: String, required: true },     // user's password
+    },
+    {
+        collection: 'users',                            // list of users
+    }
+);
 
-// Used by Passport middleware to validate password against what is stored in DB
-accountSchema.methods.validatePassword = function(password, hash) {
-    return bcrypt.compareSync(password, hash); // boolean return
-};
-
-module.exports = mongoose.model('User', accountSchema);
+// export user definition
+module.exports = mongoose.model('User', userSchema);
