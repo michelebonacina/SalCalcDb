@@ -24,17 +24,18 @@ if (appEnv.isLocal)
     require('dotenv').load();   // Loads .env file into environment
 }
 
-// //////////////////
-// MONGODB CONNECTION
+// 
+// ## mongodb connection ##
+//
 
-//Detect environment and connect to appropriate DB
+// detect environment and connect to appropriate DB
 if (appEnv.isLocal)
 {
     mongoose.connect(process.env.LOCAL_MONGODB_URL + "/" + process.env.LOCAL_MONGODB_DB);
     sessionDB = process.env.LOCAL_MONGODB_URL + "/" + process.env.LOCAL_MONGODB_DB;
     console.log('Your MongoDB is running at ' + process.env.LOCAL_MONGODB_URL + "/" + process.env.LOCAL_MONGODB_DB);
 }
-// Connect to MongoDB Service on Bluemix
+// connect to MongoDB Service on Bluemix
 else if (!appEnv.isLocal)
 {
     var mongoDbUrl, mongoDbOptions = {};
@@ -60,8 +61,9 @@ else
     console.log('Unable to connect to MongoDB.');
 }
 
-// /////////////////////
-// MIDDLEWARE & SETTINGS
+// 
+// ## middleware & settings ##
+// 
 
 var app = express();
 app.enable('trust proxy');
@@ -102,10 +104,12 @@ app.use(cors(
     }
 ));
 
-// ////////////////
-// MANAGE API CALLS
+// 
+// ## manager api calls
+//
 
 // get home
+// trap request to / (homepage) and return index file
 app.get('/',
     (request, response) =>
     {
@@ -114,6 +118,7 @@ app.get('/',
 );
 
 // list all persons
+// trap request to person list, load from persistence and return
 app.get('/api/person/list',
     (request, response) =>
     {
@@ -132,7 +137,7 @@ app.get('/api/person/list',
                             id: persons[i]._id,
                             surname: persons[i].surname,
                             name: persons[i].name,
-                            birthdate: dateFormat(persons[i].birthdate, 'yyyy-mm-dd'),
+                            birthdate: persons[i].birthdate ? dateFormat(persons[i].birthdate, 'yyyy-mm-dd') : null,
                         }
                     );
                 }
@@ -144,10 +149,11 @@ app.get('/api/person/list',
 );
 
 // create a new person
+// trap request to create person, get data and store in persistence 
 app.post('/api/person/create',
     (request, response) =>
     {
-        // check if person's data are posted
+        // check if person data are posted
         request.checkBody('surname', 'Surname is required').notEmpty();
         request.checkBody('name', 'Name is required').notEmpty();
         // check errors and return an array with validation errors
@@ -186,6 +192,7 @@ app.post('/api/person/create',
 );
 
 // update an existing person
+// trap update person request, get data and update in persistence
 app.post('/api/person/update/*',
     (request, response) =>
     {
@@ -241,6 +248,7 @@ app.post('/api/person/update/*',
 );
 
 // delete an existing person
+// trap delete person request and remove from persistence
 app.delete('/api/person/delete/*',
     (request, response) =>
     {
@@ -280,6 +288,7 @@ app.delete('/api/person/delete/*',
 );
 
 // check user login
+// trap login request, get use credentials and check in persistence
 app.post('/api/user/login',
     (request, response) =>
     {
@@ -340,6 +349,7 @@ app.post('/api/user/login',
 );
 
 // list all users
+// trap user list request, get from persistence and return
 app.get('/api/user/list',
     (request, response) =>
     {
@@ -368,6 +378,7 @@ app.get('/api/user/list',
 );
 
 // create a new user
+// trap create user request, get data and store in persistence
 app.post('/api/user/create',
     (request, response) =>
     {
@@ -412,6 +423,7 @@ app.post('/api/user/create',
 );
 
 // update an existing user
+// trap user update request, get data and update in persistence
 app.post('/api/user/update/*',
     (request, response) =>
     {
@@ -464,6 +476,7 @@ app.post('/api/user/update/*',
 );
 
 // change existing user password
+// trap change password request, get data and update in persistence
 app.post('/api/user/changePassword/*',
     (request, response) =>
     {
@@ -519,6 +532,7 @@ app.post('/api/user/changePassword/*',
 );
 
 // delete an existing user
+// trap delete user request and remove from persistence
 app.delete('/api/user/delete/*',
     (request, response) =>
     {
@@ -557,9 +571,11 @@ app.delete('/api/user/delete/*',
     }
 );
 
-// //////////////
-// SERVER STARTUP
+//
+// ## server startup ##
+//
 
+// start server
 app.listen(appEnv.port, appEnv.bind,
     function ()
     {

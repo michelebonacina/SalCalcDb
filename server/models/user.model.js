@@ -1,21 +1,17 @@
 'use strict';
 
-/********************************
- Dependencies
- ********************************/
 var mongoose = require('mongoose');
 
-/********************************
- Create User Schema
- ********************************/
+// create user schema
 var userSchema = new mongoose.Schema(
     {
-        username: { type: String, required: true },
-        password: { type: String, required: true },
+        username: { type: String, required: true },     // user's username
+        password: { type: String, required: true },     // user's password
     },
     {
-        collection: 'users',
+        collection: 'users',                            // list of users
     }
 );
 
+// export user definition
 module.exports = mongoose.model('User', userSchema);

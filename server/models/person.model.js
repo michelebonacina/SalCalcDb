@@ -1,22 +1,18 @@
 'use strict';
 
-/********************************
- Dependencies
- ********************************/
 var mongoose = require('mongoose');
 
-/********************************
- Create Person Schema
- ********************************/
+// create person schema
 var personSchema = new mongoose.Schema(
     {
-        surname: { type: String, required: true },
-        name: { type: String, required: true },
-        birthdate: { type: Date },
+        surname: { type: String, required: true },      // person's surname
+        name: { type: String, required: true },         // person's name
+        birthdate: { type: Date },                      // person's birthdate
     },
     {
-        collection: 'persons',
+        collection: 'persons',                          // list of person
     }
 );
 
+// export person definition
 module.exports = mongoose.model('Person', personSchema);
