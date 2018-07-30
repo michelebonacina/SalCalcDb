@@ -377,6 +377,70 @@ app.get('/api/user/list',
     }
 );
 
+// initialize the first user
+// trap initilized user request, get data and store in persistence
+app.get('/api/user/initialize',
+    (request, response) =>
+    {
+        // check user list
+        var query = User.count();
+        query.exec(
+            (error, count) =>
+            {
+                if (count == 0)
+                {
+                    // no user defined
+                    // split url parts
+                    var urlParts = url.parse(request.url, true);
+                    var urlQuery = urlParts.query;
+                    if (urlQuery.username && urlQuery.password)
+                    {
+                        // encrypt password
+                        var salt = bcrypt.genSaltSync(10);
+                        var hash = bcrypt.hashSync(urlQuery.password, salt);
+                        // create a new user
+                        var user = new User(
+                            {
+                                username: urlQuery.username,
+                                password: hash,
+                            }
+                        )
+                        // store user in persistence
+                        user.save(
+                            // manage store result
+                            (error) =>
+                            {
+                                if (error)
+                                {
+                                    // send error response
+                                    console.log(error);
+                                    response.status(500).send('Error saving new user (database error). Please try again.');
+                                    return;
+                                }
+                                // sends ok response
+                                response.status(200).send('User created!');
+                            }
+                        );
+                    }
+                    else
+                    {
+                        // mandatory data missing
+                        response.status(400).send('Username and Password are mandatory!');
+                    }
+                }
+                else
+                {
+                    // there're other users
+                    response.status(400).send('Initialization available only with no user defined!');
+                }
+
+            }
+        );
+
+    }
+);
+
+
 // create a new user
 // trap create user request, get data and store in persistence
 app.post('/api/user/create',

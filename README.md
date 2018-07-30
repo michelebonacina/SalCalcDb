@@ -3,7 +3,13 @@ Salary Calculator Database Management
 Manage SalCalc application persistence 
 Based on IBM MEAN Stack Application
 
-# Person
+## User
+### Initialization
+Only if there's no user defined, it's possibile to call API 
+    /api/user/initialize
+via GET request, passing parameters 'username' and 'password' for creating the first user.
+
+## Person
 
 
 ## History
