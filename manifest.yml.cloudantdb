@@ -1,0 +1,10 @@
+---
+applications:
+- path: .
+  name: salcalc
+  host: salcalc-led
+  memory: 128M
+  instances: 1
+  services:
+  - salcalc
+  
