@@ -173,7 +173,7 @@ app.use(expressValidator()); // must go directly after bodyParser
 app.use(cookieParser());
 app.use(cors(
     {
-        origin: 'http://localhost:4200',
+        origin: ['https://salcalc.eu-gb.mybluemix.net'],
         credentials: true
     }
 ));

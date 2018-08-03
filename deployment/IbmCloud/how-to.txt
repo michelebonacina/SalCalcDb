@@ -1,0 +1,16 @@
+HowTo deploy application in IBM Cloud
+
+
+Using Cloudant nosql database
+
+01. login to ibm cloud
+    ibmcloud login
+02. switch to cloud foundry management
+    ibmcloud target --cf
+03. create cloudand database service
+    cf create-service cloudantNoSQLDB Lite salcalc-cloudant
+04. prepare application for deployment
+    copy manifest.yml.cloudantdb configuration file into project root directory naming manifest.yml  
+05. deploy application on IBM Cloud
+    from project root directory, upload and deploy application
+        ibmcloud cf push
