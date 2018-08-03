@@ -1,0 +1,30 @@
+HowTo deploy application locally
+
+
+Using Cloudant nosql database
+
+01. login to IBM Cloud and open Dashboard
+02. create cloudant database instance
+    click on Create Resource > Database > Cloudant 
+        ServiceName: salcalc-cloudant
+        Region: <choose your region>
+        Resource group: <choose your group>
+        Authentication methods: Use both legacy credentials and IAM
+        Plan: Lite
+    click create
+03. create access credentials
+    from Dashbard choose salcalc-cloudant service
+    click Service Credentials > New Credential
+        Name: main-user
+        Rule: manager
+        Service id: <leave blank>
+        Parameters: <leave blank>
+    click Add
+04. configure app with credentials 
+    expand Show Credentials created on pass 3.
+    in json doc search for "url" and copy value without "
+    in project root directory rename server.js.cloudantdb to server.js and open it
+    on line 33 replace content of ".." after = with copied value
+    save server.js
+05. open a console and from project root dir startup application
+    node server
