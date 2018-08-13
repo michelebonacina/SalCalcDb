@@ -2,7 +2,7 @@
   "name": "mean-boilerplate-ibm-bluemix",
   "version": "1.0.0",
   "description": "MEAN (Mongo, Express, Angular, Node.js) Boilerplate for IBM Bluemix",
-  "main": "server.js",
+  "main": "server-cloudant.js",
   "engines": {
     "node": ">=4.4.5"
   },

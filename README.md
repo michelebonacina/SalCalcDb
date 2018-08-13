@@ -14,7 +14,9 @@ via GET request, passing parameters 'username' and 'password' for creating the f
 
 ## History
 - version 0.0.0 - starting from IBM MEAN Stack Application
-- version 0.0.1 - added person and user persistence management, 
+- version 0.0.1 - added person and user persistence management
+- version 0.0.2 - added authentication support
+- version 0.0.3 - added user data
 
 ## ToDo
 
