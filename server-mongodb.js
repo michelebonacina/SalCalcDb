@@ -1,20 +1,24 @@
+// NOTE: Tested only locally with local mongodb instance because IBM Compose for MongoDB is not included in Lite Plan.
+
 'use strict';
 
 var express = require('express'),                       // server middleware
-    basicAuth = require('express-basic-auth'),
+    mongoose = require('mongoose'),                     // MongoDB connection library
     bodyParser = require('body-parser'),                // parse HTTP requests
     url = require('url'),
     expressValidator = require('express-validator'),    // validation tool for processing user input
     cookieParser = require('cookie-parser'),
+    session = require('express-session'),
     cors = require('cors'),
+    MongoStore = require('connect-mongo/es5')(session), // store sessions in MongoDB for persistence
     bcrypt = require('bcrypt'),                         // middleware to encrypt/decrypt passwords
+    sessionDB,
     cfenv = require('cfenv'),                           // Cloud Foundry Environment Variables
     appEnv = cfenv.getAppEnv(),                         // Grab environment variables
     dateFormat = require('dateformat'),
-    cloudant = require('cloudant'),
 
-    Person = require('./server/models/person.model'),
-    User = require('./server/models/user.model');
+    Person = require('./server/models/mongodb/person.model'),
+    User = require('./server/models/mongodb/user.model');
 
 
 if (appEnv.isLocal)
@@ -23,132 +27,41 @@ if (appEnv.isLocal)
 }
 
 // 
-// ## cloudantdb connection ##
+// ## mongodb connection ##
 //
 
 // detect environment and connect to appropriate DB
-var cloudant_url;
 if (appEnv.isLocal)
 {
-    console.log("Local execution");
-    cloudant_url = "https://052bea8a-ae3e-4a95-b26f-93e9c5fca4cc-bluemix:a01384e68b8a4d804d10e90c60f3f71a5200b3ee3fff27141328c3b126c00b79@052bea8a-ae3e-4a95-b26f-93e9c5fca4cc-bluemix.cloudant.com"
+    mongoose.connect(process.env.LOCAL_MONGODB_URL + "/" + process.env.LOCAL_MONGODB_DB);
+    sessionDB = process.env.LOCAL_MONGODB_URL + "/" + process.env.LOCAL_MONGODB_DB;
+    console.log('Your MongoDB is running at ' + process.env.LOCAL_MONGODB_URL + "/" + process.env.LOCAL_MONGODB_DB);
 }
-// connect to Cloudant DB on Bluemix
+// connect to MongoDB Service on Bluemix
 else if (!appEnv.isLocal)
 {
-    console.log("Cloud execution");
-    var services = JSON.parse(process.env.VCAP_SERVICES || "{}");
-    if (process.env.VCAP_SERVICES)
-    {
-        services = JSON.parse(process.env.VCAP_SERVICES);
-        if (services.cloudantNoSQLDB) //Check if cloudantNoSQLDB service is bound to your project
-        {
-            cloudant_url = services.cloudantNoSQLDB[0].credentials.url;  //Get URL and other paramters
-            console.log("Name = " + services.cloudantNoSQLDB[0].name);
-            console.log("URL = " + services.cloudantNoSQLDB[0].credentials.url);
-            console.log("username = " + services.cloudantNoSQLDB[0].credentials.username);
-            console.log("password = " + services.cloudantNoSQLDB[0].credentials.password);
+    var mongoDbUrl, mongoDbOptions = {};
+    var mongoDbCredentials = appEnv.services["compose-for-mongodb"][0].credentials;
+    var ca = [new Buffer(mongoDbCredentials.ca_certificate_base64, 'base64')];
+    mongoDbUrl = mongoDbCredentials.uri;
+    mongoDbOptions = {
+        mongos: {
+            ssl: true,
+            sslValidate: true,
+            sslCA: ca,
+            poolSize: 1,
+            reconnectTries: 1
         }
-    }
+    };
+
+    console.log("Your MongoDB is running at ", mongoDbUrl);
+    mongoose.connect(mongoDbUrl, mongoDbOptions); // connect to our database
+    sessionDB = mongoDbUrl;
 }
 else
 {
-    console.log('Unable to connect to Cloudant DB.');
+    console.log('Unable to connect to MongoDB.');
 }
-
-//Connect using cloudant npm and URL obtained from previous step
-var cloudantDb = cloudant({ url: cloudant_url });
-//Edit this variable value to change name of database.
-var dbname = 'salcalc';
-var db;
-
-//Create database
-cloudantDb.db.create(dbname,
-    (err, data) =>
-    {
-        if (err)
-        {
-            // database exists
-            console.log("Database exists.");
-            // open database
-            db = cloudantDb.db.use(dbname);
-        }
-        else
-        {
-            // database not exists
-            console.log("Database created.");
-            // open database
-            db = cloudantDb.db.use(dbname);
-            // create indexes
-            // docType index
-            var index =
-            {
-                index: { fields: ["docType"] },
-                name: "docType-index",
-                type: "json",
-            };
-            db.index(index,
-                (error, data) =>
-                {
-                    if (error)
-                    {
-                        // error creating index
-                        console.log("Error creating docType-index.", error)
-                    }
-                    else 
-                    {
-                        // index created
-                        console.log("Index docType-index create");
-                    }
-                }
-            );
-            // user 01 index
-            index =
-                {
-                    index: { fields: ["docType", "username"] },
-                    name: "user01-index",
-                    type: "json",
-                };
-            db.index(index,
-                (error, data) =>
-                {
-                    if (error)
-                    {
-                        // error creating index
-                        console.log("Error creating user01-index.", error)
-                    }
-                    else 
-                    {
-                        // index created
-                        console.log("Index user01-index create");
-                    }
-                }
-            );
-            // person index 01
-            var index =
-            {
-                index: { fields: ["docType", "surname", "name"] },
-                name: "person01-index",
-                type: "json",
-            };
-            db.index(index,
-                (error, data) =>
-                {
-                    if (error)
-                    {
-                        // error creating index
-                        console.log("Error creating user01-index.", error)
-                    }
-                    else 
-                    {
-                        // index created
-                        console.log("Index user01-index create");
-                    }
-                }
-            );
-        }
-    }
-);
 
 // 
 // ## middleware & settings ##
@@ -172,53 +85,26 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(expressValidator()); // must go directly after bodyParser
 app.use(cookieParser());
+app.use(session(
+    {
+        secret: process.env.SESSION_SECRET || 'this_is_a_default_session_secret_in_case_one_is_not_defined',
+        resave: true,
+        store: new MongoStore(
+            {
+                url: sessionDB,
+                autoReconnect: true
+            }
+        ),
+        saveUninitialized: false,
+        cookie: { secure: true }
+    }
+));
 app.use(cors(
     {
-        origin: ['https://salcalc.eu-gb.mybluemix.net', 'http://localhost:4200'],
+        origin: 'http://localhost:4200',
         credentials: true
     }
 ));
-
-var auth = basicAuth(
-    {
-        authorizer:
-            (username, password, callback) =>
-            {
-                // search user
-                var query =
-                {
-                    selector:
-                    {
-                        docType: "user",
-                        username: username,
-                        password: password
-                    }
-                };
-                var authorized = false;
-                db.find(query,
-                    (error, users) =>
-                    {
-                        if (error)
-                        {
-                            // send error response
-                            console.log(error);
-                            return callback(error, false);
-                        }
-                        if (users && users.docs && users.docs[0])
-                        {
-                            // user finded
-                            return callback(null, true);
-                        }
-                        // user not finded
-                        return callback(null, false);
-                    }
-                );
-            },
-        authorizeAsync: true,
-        challenge: true,
-        realm: 'Imb4T3st4pp',
-    }
-)
 
 // 
 // ## manager api calls
@@ -230,52 +116,35 @@ app.get('/',
     (request, response) =>
     {
         response.sendfile('index.html');
-        return;
     }
 );
 
 // list all persons
 // trap request to person list, load from persistence and return
-app.get('/api/person/list', auth,
+app.get('/api/person/list',
     (request, response) =>
     {
         // prepare and execute query
-        var query =
-        {
-            selector: { docType: "person" },
-            sort: [{ docType: "asc" }, { surname: "asc" }, { name: "asc" }]
-        };
-        db.find(query,
+        var query = Person.find().sort({ surname: 1, name: 1 });
+        query.exec(
             (error, persons) =>
             {
-                if (error)
-                {
-                    // error finding persons list
-                    console.log(error);
-                    response.status("500").send({ message: 'Error loading persons (database error). Please try again.' });
-                    return;
-                }
-                // initialize persons list
+                // finded persons
                 var personList = [];
-                if (persons && persons.docs && persons.docs.length > 0)
+                for (var i in persons)
                 {
-                    // finded persons
-                    for (var i in persons.docs)
-                    {
-                        // add person to list
-                        personList.push(
-                            {
-                                id: persons.docs[i]._id,
-                                surname: persons.docs[i].surname,
-                                name: persons.docs[i].name,
-                                birthdate: persons.docs[i].birthdate ? dateFormat(persons.docs[i].birthdate, 'yyyy-mm-dd') : null,
-                            }
-                        );
-                    }
+                    // add person to list
+                    personList.push(
+                        {
+                            id: persons[i]._id,
+                            surname: persons[i].surname,
+                            name: persons[i].name,
+                            birthdate: persons[i].birthdate ? dateFormat(persons[i].birthdate, 'yyyy-mm-dd') : null,
+                        }
+                    );
                 }
                 // send finded persons to response
-                response.status(200).send(JSON.stringify(personList));
-                return;
+                response.send(JSON.stringify(personList));
             }
         );
     }
@@ -283,7 +152,7 @@ app.get('/api/person/list', auth,
 
 // create a new person
 // trap request to create person, get data and store in persistence 
-app.post('/api/person/create', auth,
+app.post('/api/person/create',
     (request, response) =>
     {
         // check if person data are posted
@@ -298,28 +167,27 @@ app.post('/api/person/create', auth,
             return;
         }
         // create a new person
-        var person =
-        {
-            docType: "person",
-            surname: request.body.surname,
-            name: request.body.name,
-            birthdate: request.body.birthdate,
-        };
+        var person = new Person(
+            {
+                surname: request.body.surname,
+                name: request.body.name,
+                birthdate: request.body.birthdate,
+            }
+        )
         // store person in persistence
-        db.insert(person,
+        person.save(
             // manage store result
-            (error, data) =>
+            (error) =>
             {
                 if (error)
                 {
                     // send error response
                     console.log(error);
-                    response.status(500).send({ message: 'Error saving new person (database error). Please try again.' });
+                    response.status(500).send('Error saving new person (database error). Please try again.');
                     return;
                 }
                 // send ok response
-                response.status(200).send({ message: 'Person created!' });
-                return;
+                response.status(200).send('Person created!');
             }
         );
     }
@@ -327,7 +195,7 @@ app.post('/api/person/create', auth,
 
 // update an existing person
 // trap update person request, get data and update in persistence
-app.post('/api/person/update/*', auth,
+app.post('/api/person/update/*',
     (request, response) =>
     {
         // get person's id
@@ -345,7 +213,7 @@ app.post('/api/person/update/*', auth,
             return;
         }
         // load person
-        db.get(id,
+        Person.findById(id,
             (error, person) =>
             {
                 // manage find result
@@ -353,7 +221,7 @@ app.post('/api/person/update/*', auth,
                 {
                     // send error response
                     console.log(error);
-                    response.status(500).send({ message: 'Error finding existing person (database error). Please try again.' });
+                    response.status(500).send('Error finding existing person (database error). Please try again.');
                     return;
                 }
                 // update person's data
@@ -361,20 +229,19 @@ app.post('/api/person/update/*', auth,
                 person.name = request.body.name;
                 person.birthdate = request.body.birthdate;
                 // store person in persistence
-                db.insert(person,
+                person.save(
                     // manage store result
-                    (error, data) =>
+                    (error) =>
                     {
                         if (error)
                         {
                             // send error response
                             console.log(error);
-                            response.status(500).send({ message: 'Error updating existing person (database error). Please try again.' });
+                            response.status(500).send('Error updating existing person (database error). Please try again.');
                             return;
                         }
                         // send ok response
-                        response.status(200).send({ message: 'Person updated!' });
-                        return;
+                        response.status(200).send('Person updated!');
                     }
                 );
             }
@@ -384,14 +251,14 @@ app.post('/api/person/update/*', auth,
 
 // delete an existing person
 // trap delete person request and remove from persistence
-app.delete('/api/person/delete/*', auth,
+app.delete('/api/person/delete/*',
     (request, response) =>
     {
         // get person's id
         var urlParts = url.parse(request.url);
         var id = urlParts.pathname.split('/').pop();
         // load person
-        db.get(id,
+        Person.findById(id,
             (error, person) =>
             {
                 // manage find result
@@ -399,23 +266,22 @@ app.delete('/api/person/delete/*', auth,
                 {
                     // send error response
                     console.log(error);
-                    response.status(500).send({ message: 'Error finding existing person (database error). Please try again.' });
+                    response.status(500).send('Error finding existing person (database error). Please try again.');
                     return;
                 }
                 // delete person from persistence
-                db.destroy(person._id, person._rev,
-                    (error, data) =>
+                person.remove(
+                    (error, person) =>
                     {
                         if (error)
                         {
                             // send error response
                             console.log(error);
-                            response.status(500).send({ message: 'Error deleting existing person (database error). Please try again.' });
+                            response.status(500).send('Error deleting existing person (database error). Please try again.');
                             return;
                         }
                         // send ok response
-                        response.status(200).send({ message: 'Person deleted!' });
-                        return;
+                        response.status(200).send('Person deleted!');
                     }
                 );
             }
@@ -440,55 +306,44 @@ app.post('/api/user/login',
             return;
         }
         // search user
-        var query =
-        {
-            selector:
-            {
-                docType: "user",
-                username: request.body.username
-            }
-        };
-        db.find(query,
-            (error, users) =>
+        User.findOne(
+            { username: request.body.username },
+            (error, user) =>
             {
                 if (error)
                 {
                     // send error response
                     console.log(error);
-                    response.status(500).send({ message: 'Error finding existing user (database error). Please try again.' });
+                    response.status(500).send('Error finding existing user (database error). Please try again.');
                     return;
                 }
-                if (users && users.docs && users.docs[0])
+                if (user)
                 {
                     // user finded
                     // check password
-                    if (bcrypt.compareSync(request.body.password, users.docs[0].password))
+                    if (bcrypt.compareSync(request.body.password, user.password))
                     {
                         // password match
                         var authenticatedUser =
                         {
-                            id: users.docs[0]._id,
-                            username: users.docs[0].username,
-                            password: users.docs[0].password,
+                            id: user._id,
+                            username: user.username,
                         };
                         // send ok response
                         response.status(200).send(JSON.stringify(authenticatedUser));
-                        return;
                     }
                     else 
                     {
                         // wrong password
                         // send ko response
-                        response.status(401).send({ message: 'User unauthorized' });
-                        return;
+                        response.status(401).send('User unauthorized');
                     }
                 }
                 else 
                 {
                     // user not exist
                     // send ko response
-                    response.status(401).send({ message: 'User unauthorized' });
-                    return;
+                    response.status(401).send('User unauthorized');
                 }
             }
         );
@@ -497,44 +352,28 @@ app.post('/api/user/login',
 
 // list all users
 // trap user list request, get from persistence and return
-app.get('/api/user/list', auth,
+app.get('/api/user/list',
     (request, response) =>
     {
         // prepare and execute query
-        var query =
-        {
-            selector: { docType: "user" },
-            sort: [{ username: "asc" }]
-        };
-        db.find(query,
+        var query = User.find().sort({ username: 1 });
+        query.exec(
             (error, users) =>
             {
-                if (error)
-                {
-                    // send error response
-                    console.log(error);
-                    response.status(500).send({ message: 'Error finding users list (database error). Please try again.' });
-                    return;
-                }
-                // initialize users list
+                // finded users
                 var userList = [];
-                if (users && users.docs)
+                for (var i in users)
                 {
-                    // finded users
-                    for (var i in users.docs)
-                    {
-                        // add user to list
-                        userList.push(
-                            {
-                                id: users.docs[i]._id,
-                                username: users.docs[i].username,
-                            }
-                        );
-                    }
+                    // add user to list
+                    userList.push(
+                        {
+                            id: users[i]._id,
+                            username: users[i].username,
+                        }
+                    );
                 }
                 // send finded users to response
                 response.send(JSON.stringify(userList));
-                return;
             }
         );
     }
@@ -546,21 +385,11 @@ app.get('/api/user/initialize',
     (request, response) =>
     {
         // check user list
-        var query =
-        {
-            selector: { docType: "user" }
-        };
-        db.find(query,
-            (error, users) =>
+        var query = User.count();
+        query.exec(
+            (error, count) =>
             {
-                if (error)
-                {
-                    // send error response
-                    console.log(error);
-                    response.status(500).send({ message: 'Error finding users list (database error). Please try again.' });
-                    return;
-                }
-                if (users.docs.length == 0)
+                if (count == 0)
                 {
                     // no user defined
                     // split url parts
@@ -572,43 +401,41 @@ app.get('/api/user/initialize',
                         var salt = bcrypt.genSaltSync(10);
                         var hash = bcrypt.hashSync(urlQuery.password, salt);
                         // create a new user
-                        var user =
-                        {
-                            docType: "user",
-                            username: urlQuery.username,
-                            password: hash,
-                        };
+                        var user = new User(
+                            {
+                                username: urlQuery.username,
+                                password: hash,
+                            }
+                        )
                         // store user in persistence
-                        db.insert(user,
-                            (error, data) =>
+                        user.save(
+                            // manage store result
+                            (error) =>
                             {
                                 if (error)
                                 {
                                     // send error response
                                     console.log(error);
-                                    response.status(500).send({ message: 'Error saving new user (database error). Please try again.' });
+                                    response.status(500).send('Error saving new user (database error). Please try again.');
                                     return;
                                 }
                                 // sends ok response
-                                response.status(200).send({ message: 'User created!' });
-                                return;
+                                response.status(200).send('User created!');
                             }
                         );
-
                     }
                     else
                     {
                         // mandatory data missing
-                        response.status(400).send({ message: 'Username and Password are mandatory!' });
-                        return;
+                        response.status(400).send('Username and Password are mandatory!');
                     }
                 }
                 else
                 {
                     // there're other users
-                    response.status(400).send({ message: 'Initialization available only with no user defined!' });
-                    return;
+                    response.status(400).send('Initialization available only with no user defined!');
                 }
+
             }
         );
 
@@ -618,7 +445,7 @@ app.get('/api/user/initialize',
 
 // create a new user
 // trap create user request, get data and store in persistence
-app.post('/api/user/create', auth,
+app.post('/api/user/create',
     (request, response) =>
     {
         // check if user data are posted
@@ -636,27 +463,26 @@ app.post('/api/user/create', auth,
         var salt = bcrypt.genSaltSync(10);
         var hash = bcrypt.hashSync(request.body.password, salt);
         // create a new user
-        var user =
-        {
-            docType: "user",
-            username: request.body.username,
-            password: hash,
-        };
+        var user = new User(
+            {
+                username: request.body.username,
+                password: hash,
+            }
+        )
         // store user in persistence
-        db.insert(user,
+        user.save(
             // manage store result
-            (error, data) =>
+            (error) =>
             {
                 if (error)
                 {
                     // send error response
                     console.log(error);
-                    response.status(500).send({ message: 'Error saving new user (database error). Please try again.' });
+                    response.status(500).send('Error saving new user (database error). Please try again.');
                     return;
                 }
                 // sends ok response
-                response.status(200).send({ message: 'User created!' });
-                return;
+                response.status(200).send('User created!');
             }
         );
     }
@@ -664,7 +490,7 @@ app.post('/api/user/create', auth,
 
 // update an existing user
 // trap user update request, get data and update in persistence
-app.post('/api/user/update/*', auth,
+app.post('/api/user/update/*',
     (request, response) =>
     {
         // get user's id
@@ -681,7 +507,7 @@ app.post('/api/user/update/*', auth,
             return;
         }
         // load user
-        db.get(id,
+        User.findById(id,
             (error, user) =>
             {
                 // manage find result
@@ -689,26 +515,25 @@ app.post('/api/user/update/*', auth,
                 {
                     // send error response
                     console.log(error);
-                    response.status(500).send({ message: 'Error finding existing user (database error). Please try again.' });
+                    response.status(500).send('Error finding existing user (database error). Please try again.');
                     return;
                 }
                 // update user's data
                 user.username = request.body.username;
                 // store user in persistence
-                db.insert(user,
+                user.save(
                     // manage store result
-                    (error, data) =>
+                    (error) =>
                     {
                         if (error)
                         {
                             // send error response
                             console.log(error);
-                            response.status(500).send({ message: 'Error updating existing user (database error). Please try again.' });
+                            response.status(500).send('Error updating existing user (database error). Please try again.');
                             return;
                         }
                         // send ok response
-                        response.status(200).send({ message: 'User updated!' });
-                        return;
+                        response.status(200).send('User updated!');
                     }
                 );
             }
@@ -718,7 +543,7 @@ app.post('/api/user/update/*', auth,
 
 // change existing user password
 // trap change password request, get data and update in persistence
-app.post('/api/user/changePassword/*', auth,
+app.post('/api/user/changePassword/*',
     (request, response) =>
     {
         // get user's id
@@ -735,7 +560,7 @@ app.post('/api/user/changePassword/*', auth,
             return;
         }
         // load user
-        db.get(id,
+        User.findById(id,
             (error, user) =>
             {
                 // manages find result
@@ -743,7 +568,7 @@ app.post('/api/user/changePassword/*', auth,
                 {
                     // send error response
                     console.log(error);
-                    response.status(500).send({ message: 'Error finding existing user (database error). Please try again.' });
+                    response.status(500).send('Error finding existing user (database error). Please try again.');
                     return;
                 }
                 // encrypt password
@@ -752,20 +577,19 @@ app.post('/api/user/changePassword/*', auth,
                 // update user's data
                 user.password = hash;
                 // store user in persistence
-                db.insert(
+                user.save(
                     // manage store result
-                    (error, data) =>
+                    (error) =>
                     {
                         if (error)
                         {
                             // send error response
                             console.log(error);
-                            response.status(500).send({ message: 'Error changingc existing user password (database error). Please try again.' });
+                            response.status(500).send('Error changingc existing user password (database error). Please try again.');
                             return;
                         }
                         // send ok response
-                        response.status(200).send({ message: 'Password changed!' });
-                        return;
+                        response.status(200).send('Password changed!');
                     }
                 );
             }
@@ -775,14 +599,14 @@ app.post('/api/user/changePassword/*', auth,
 
 // delete an existing user
 // trap delete user request and remove from persistence
-app.delete('/api/user/delete/*', auth,
+app.delete('/api/user/delete/*',
     (request, response) =>
     {
         // get user's id
         var urlParts = url.parse(request.url);
         var id = urlParts.pathname.split('/').pop();
         // load user
-        db.get(id,
+        User.findById(id,
             (error, user) =>
             {
                 // manage find result
@@ -790,23 +614,22 @@ app.delete('/api/user/delete/*', auth,
                 {
                     // send error response
                     console.log(error);
-                    response.status(500).send({ mnessage: 'Error finding existing user (database error). Please try again.' });
+                    response.status(500).send('Error finding existing user (database error). Please try again.');
                     return;
                 }
                 // delete user from persistence
-                db.destroy(user._id, user._rev,
-                    (error, data) =>
+                user.remove(
+                    (error, user) =>
                     {
                         if (error)
                         {
                             // send error response
                             console.log(error);
-                            response.status(500).send({ message: 'Error deleting existing user (database error). Please try again.' });
+                            response.status(500).send('Error deleting existing user (database error). Please try again.');
                             return;
                         }
                         // send ok response
-                        response.status(200).send({ message: 'User deleted!' });
-                        return;
+                        response.status(200).send('User deleted!');
                     }
                 );
             }
