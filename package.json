@@ -1,14 +1,14 @@
 {
   "name": "mean-boilerplate-ibm-bluemix",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "MEAN (Mongo, Express, Angular, Node.js) Boilerplate for IBM Bluemix",
   "main": "server-cloudant.js",
   "engines": {
     "node": ">=4.4.5"
   },
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node server-cloudant.js",
+    "dev": "nodemon server-cloudant.js"
   },
   "repository": {
     "type": "git",
