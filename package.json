@@ -31,7 +31,7 @@
   "dependencies": {
     "bcrypt": "^1.0.3",
     "body-parser": "^1.14.1",
-    "cf-deployment-tracker-client": "0.0.8",
+    "cf-deployment-tracker-client": "0.1.4",
     "cfenv": "1.0.x",
     "cloudant": "^1.10.0-NOTICE",
     "connect-mongo": "^1.1.0",
